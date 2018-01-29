@@ -1,0 +1,147 @@
+---
+title: "TESS ML NOTEBOOK LISA BUGNET"
+output: html_notebook
+code_folding: hide
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+---------------------------------------- START --------------------------------------------------------------
+
+Import needed packages, define data PATH.
+
+```{r}
+require(caret)
+require(ggplot2)
+require(randomForest)
+
+PATH <- "/Users/lbugnet/DATA/TABLES/TESS_SIMU/"
+```
+
+
+Define train and test samples from TESS simulated data. Choice: clean ("CL") or noisy ("NO") data depending on the "TYPE_DATA" parameter.
+
+```{r}
+TYPE_DATA <- readline(prompt="Enter CL or NO: ")
+
+train = read.table(paste(PATH , "example_for_ml_7_",TYPE_DATA, "A3_2.txt", sep="")) 
+train<- train[,-c(9)] #remove columns you don't need
+
+test=read.table(paste(PATH, "example_for_ml_7_",TYPE_DATA,"A3_1.txt", sep=""))
+test<- test[,-c(9)] #remove columns you don't need
+```
+
+Define columns names:  
+Fp07: FliPer calculated from 0.7 $\mu$Hz  
+Fp10: FliPer calculated from 10 $\mu$Hz  
+Fp30: FliPer calculated from 30 $\mu$Hz  
+teff: effective temperatures from TESS simulated data  
+diff: Fp30-Fp10  
+diff2: Fp20-Fp07  
+diff3: Fp10-Fp07  
+Fp_med: FP07 - (FliPer calculated by the median of the PSD instead of the mean from 0.7 $\mu$Hz)  
+Classe: input categories of TESS stars  
+
+
+```{r}
+colnames(train) <- c("Fp07", "teff","Fp10", "Fp30" ,"diff","diff2", "diff3", "Fp_med",  "Classe")
+colnames(test) <- c("Fp07", "teff","Fp10", "Fp30" ,"diff","diff2","diff3", "Fp_med", "Classe")
+```
+
+
+  
+Plot training set:
+
+```{r}
+ggplot(data=train,aes(x=log10(Fp07), y=teff, color= train$Classe, main=paste("train sample", TYPE_DATA))) + geom_point()
+```
+
+
+Training data preparation:
+```{r}
+#make formula
+varNames <- names(train)
+
+# Exclude ID or Response variable
+varNames <- varNames[!varNames %in% c("Classe")]
+
+# add + sign between exploratory variables
+varNames1 <- paste(varNames, collapse = "+")
+
+# Add response variable and convert to a formula object
+rf.form <- as.formula(paste("Classe", varNames1, sep = " ~ "))
+
+```
+
+---------------------------------- Training ------------------------------------------------------------
+
+Use RandomForest R alghorithm to train the model on the training set:
+```{r}
+RRandomForest_train <- randomForest( rf.form, data = train, ntree = 2000, mtry = sqrt(10), type = classification,  replace = FALSE, maxnodes = 60, nodesize = 5, importance = TRUE )
+```
+
+
+Performances:
+```{r}
+RRandomForest_train$importance #a matrix with nclass + 2 (for classification) or two (for regression) columns. For classification, the first nclass columns are the class-specific measures computed as mean descrease in accuracy. The nclass + 1st column is the mean descrease in accuracy over all classes. The last column is the mean decrease in Gini index.
+```
+
+
+Plot of error VS number of trees
+```{r}
+plot(RRandomForest_train)
+legend("top", colnames(RRandomForest_train$err.rate),col=1:10,cex=0.8,fill=1:10)
+```
+
+
+OOB estimate error and Confusion matric for the training set:
+```{r}
+RRandomForest_train
+```
+
+
+PLots of accuracy and Gini index: Gives influences of parameters on the training
+```{r}
+varImpPlot(RRandomForest_train, type=1, pch=19, col=1, cex=.5, main="")#accuracy
+varImpPlot(RRandomForest_train, type=2)#Gini
+```
+
+
+------------------------------------ Testing on Test Data ---------------------------------------------
+
+```{r}
+###testing
+test$predicted <- predict(RRandomForest_train, test)
+```
+
+
+Confusion matrix: (estimated classes in columns, real classes in lines)
+```{r}
+conf <- confusionMatrix(data = test$predicted, reference = test$Classe)
+print(conf)
+```
+
+-------------------------------------- Plot results: ---------------------------------------------------
+
+Test sample predicted
+
+
+```{r}
+ggplot(data=test,aes(x=log10(Fp07), y=teff, color= test$predicted, main=paste("predicted classes", TYPE_DATA))) + geom_point()
+```
+
+Test sample real classes
+
+```{r}
+ggplot(data=test,aes(x=log10(Fp07), y=teff, color= test$Classe, main=paste("test real classes", TYPE_DATA))) + geom_point()
+```
+
